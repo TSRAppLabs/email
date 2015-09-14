@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/smtp"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,13 +32,12 @@ type Message struct {
 	Attachments     map[string]*Attachment
 }
 
-func (m *Message) attach(file string, inline bool) error {
-	data, err := ioutil.ReadFile(file)
+func (m *Message) attach(reader io.Reader, filename string, inline bool) error {
+	data, err := ioutil.ReadAll(reader)
+
 	if err != nil {
 		return err
 	}
-
-	_, filename := filepath.Split(file)
 
 	m.Attachments[filename] = &Attachment{
 		Filename: filename,
@@ -48,11 +49,37 @@ func (m *Message) attach(file string, inline bool) error {
 }
 
 func (m *Message) Attach(file string) error {
-	return m.attach(file, false)
+	fin, err := os.Open(file)
+
+	if err != nil {
+		return err
+	}
+
+	defer fin.Close()
+
+	_, filename := filepath.Split(file)
+	return m.attach(fin, filename, false)
+}
+
+func (m *Message) AttachReader(reader io.Reader, filename string) error {
+	return m.attach(reader, filename, false)
 }
 
 func (m *Message) Inline(file string) error {
-	return m.attach(file, true)
+	fin, err := os.Open(file)
+
+	if err != nil {
+		return err
+	}
+
+	defer fin.Close()
+
+	_, filename := filepath.Split(file)
+	return m.attach(fin, filename, true)
+}
+
+func (m *Message) InlineReader(reader io.Reader, filename string) error {
+	return m.attach(reader, filename, true)
 }
 
 func newMessage(subject string, body string, bodyContentType string) *Message {
