@@ -3,7 +3,6 @@ package email
 import (
 	"bytes"
 	"errors"
-	"net/smtp"
 	"testing"
 )
 
@@ -32,7 +31,7 @@ func TestAttachReader(t *testing.T) {
 
 	attach_content := "Testing is the future"
 
-	m.AttachReader(bytes.NewBufferString(attach_content), "Message")
+	m.AttachReader(bytes.NewBufferString(attach_content), "Message", map[string]string{})
 
 	if string(m.Attachments["Message"].Data) != attach_content {
 		panic(errors.New("Content doesn't match"))

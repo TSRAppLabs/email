@@ -19,6 +19,7 @@ type Attachment struct {
 	Filename string
 	Data     []byte
 	Inline   bool
+	Headers  map[string]string
 }
 
 type Message struct {
@@ -32,7 +33,7 @@ type Message struct {
 	Attachments     map[string]*Attachment
 }
 
-func (m *Message) attach(reader io.Reader, filename string, inline bool) error {
+func (m *Message) attach(reader io.Reader, filename string, inline bool, headers map[string]string) error {
 	data, err := ioutil.ReadAll(reader)
 
 	if err != nil {
@@ -43,6 +44,7 @@ func (m *Message) attach(reader io.Reader, filename string, inline bool) error {
 		Filename: filename,
 		Data:     data,
 		Inline:   inline,
+		Headers:  headers,
 	}
 
 	return nil
@@ -58,11 +60,11 @@ func (m *Message) Attach(file string) error {
 	defer fin.Close()
 
 	_, filename := filepath.Split(file)
-	return m.attach(fin, filename, false)
+	return m.attach(fin, filename, false, map[string]string{})
 }
 
-func (m *Message) AttachReader(reader io.Reader, filename string) error {
-	return m.attach(reader, filename, false)
+func (m *Message) AttachReader(reader io.Reader, filename string, headers map[string]string) error {
+	return m.attach(reader, filename, false, headers)
 }
 
 func (m *Message) Inline(file string) error {
@@ -75,11 +77,11 @@ func (m *Message) Inline(file string) error {
 	defer fin.Close()
 
 	_, filename := filepath.Split(file)
-	return m.attach(fin, filename, true)
+	return m.attach(fin, filename, true, map[string]string{})
 }
 
-func (m *Message) InlineReader(reader io.Reader, filename string) error {
-	return m.attach(reader, filename, true)
+func (m *Message) InlineReader(reader io.Reader, filename string, headers map[string]string) error {
+	return m.attach(reader, filename, true, headers)
 }
 
 func newMessage(subject string, body string, bodyContentType string) *Message {
@@ -146,26 +148,44 @@ func (m *Message) Bytes() []byte {
 	if len(m.Attachments) > 0 {
 		for _, attachment := range m.Attachments {
 			buf.WriteString("\n\n--" + boundary + "\n")
-
-			if attachment.Inline {
-				buf.WriteString("Content-Type: message/rfc822\n")
-				buf.WriteString("Content-Disposition: inline; filename=\"" + attachment.Filename + "\"\n\n")
-
-				buf.Write(attachment.Data)
-			} else {
-				buf.WriteString("Content-Type: application/octet-stream\n")
-				buf.WriteString("Content-Transfer-Encoding: base64\n")
-				buf.WriteString("Content-Disposition: attachment; filename=\"" + attachment.Filename + "\"\n\n")
-
-				b := make([]byte, base64.StdEncoding.EncodedLen(len(attachment.Data)))
-				base64.StdEncoding.Encode(b, attachment.Data)
-				buf.Write(b)
-			}
-
+			buf.Write(attachment.Bytes())
 			buf.WriteString("\n--" + boundary)
 		}
 
 		buf.WriteString("--")
+	}
+
+	return buf.Bytes()
+}
+
+func (attachment Attachment) Bytes() []byte {
+	buf := bytes.NewBuffer(nil)
+
+	if attachment.Headers == nil {
+		attachment.Headers = make(map[string]string)
+	}
+
+	if attachment.Inline {
+		attachment.Headers["Content-Type"] = "message/rfc822"
+		attachment.Headers["Content-Disposition"] = "inline; filename=\"" + attachment.Filename + "\""
+	} else {
+		attachment.Headers["Content-Type"] = "application/octet-stream"
+		attachment.Headers["Content-Tranfer-Encoding"] = "base64"
+		attachment.Headers["Content-Disposition"] = "attachment; filename=\"" + attachment.Filename + "\""
+	}
+
+	for key, val := range attachment.Headers {
+		buf.WriteString(fmt.Sprintf("%v: %v\n", key, val))
+	}
+
+	buf.Write([]byte("\n"))
+
+	if attachment.Inline {
+		buf.Write(attachment.Data)
+	} else {
+		b := make([]byte, base64.StdEncoding.EncodedLen(len(attachment.Data)))
+		base64.StdEncoding.Encode(b, attachment.Data)
+		buf.Write(b)
 	}
 
 	return buf.Bytes()
